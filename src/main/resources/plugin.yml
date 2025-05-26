@@ -1,0 +1,7 @@
+name: glowy
+version: '0.1'
+main: net.devariss.glowy.GlowyPlugin
+api-version: '1.21'
+load: STARTUP
+authors: [ devariss ]
+description: Minecraft Discord bot plugin.
