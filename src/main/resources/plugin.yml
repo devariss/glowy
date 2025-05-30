@@ -1,6 +1,6 @@
 name: glowy
 version: '0.1'
-main: net.devariss.glowy.GlowyPlugin
+main: glowy.core.GlowyPlugin
 api-version: '1.21'
 load: STARTUP
 authors: [ devariss ]
