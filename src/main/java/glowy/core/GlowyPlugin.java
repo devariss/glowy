@@ -39,15 +39,15 @@ public final class GlowyPlugin extends ReactivePlugin {
                 .filter(name -> name.equals(playerName))
                 .map(name -> Mono.just(hook))
                 .orElseGet(() -> {
-                        var hookEdit = WebhookEditSpec.builder().name(playerName);
-                        try {
-                            hookEdit.avatar(Image.ofRaw(Bytes.toArray(Players.getPlayerAvatar(event.getPlayer(), Size.of(512, 512))), Image.Format.PNG));
-                        }
-                        catch (IOException e) {
-                            hookEdit.avatar(Possible.absent());
-                        }
-                        return hook.edit(hookEdit.build());
-                    });
+                    var hookEdit = WebhookEditSpec.builder().name(playerName);
+                    try {
+                        hookEdit.avatar(Image.ofRaw(Bytes.toArray(Players.getPlayerAvatar(event.getPlayer(), Size.of(512, 512))), Image.Format.PNG));
+                    }
+                    catch (IOException e) {
+                        hookEdit.avatar(Possible.absent());
+                    }
+                    return hook.edit(hookEdit.build());
+                });
         };
         return BOT.client().withGateway(gateway -> gateway.getChannelById(BOT.chatChannelId())
             .cast(TextChannel.class)

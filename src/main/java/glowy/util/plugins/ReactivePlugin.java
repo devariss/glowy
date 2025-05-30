@@ -9,18 +9,21 @@ import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
+import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 
 import java.util.Optional;
 import java.util.concurrent.Executors;
 
 public abstract class ReactivePlugin extends JavaPlugin {
+    private final Scheduler TASK_SCHEDULER = Schedulers.fromExecutor(Executors.newVirtualThreadPerTaskExecutor());
+
     private Disposable initDisposable;
 
     @Override
     public final void onEnable() {
         initDisposable = onInit()
-            .subscribeOn(Schedulers.fromExecutor(Executors.newVirtualThreadPerTaskExecutor()))
+            .subscribeOn(TASK_SCHEDULER)
             .subscribe();
     }
 
@@ -38,7 +41,7 @@ public abstract class ReactivePlugin extends JavaPlugin {
         Sinks.Many<T> eventSink = Sinks.many().multicast().onBackpressureBuffer();
         EventExecutor emitEvent = (listener, event) -> eventSink.tryEmitNext(clazz.cast(event));
         getServer().getPluginManager().registerEvent(clazz, new Listener(){}, priority, emitEvent, this, ignoreCancelled);
-        return eventSink.asFlux();
+        return eventSink.asFlux().publishOn(TASK_SCHEDULER);
     }
 
     protected abstract Mono<Void> onInit();
