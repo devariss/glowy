@@ -1,31 +1,42 @@
-package glowy.util.minecraft;
+package glowy.util.hooks;
 
-import com.google.common.primitives.Bytes;
-import glowy.util.images.Size;
+import discord4j.core.object.entity.Webhook;
+import discord4j.core.object.entity.channel.TextChannel;
+import discord4j.core.spec.WebhookCreateSpec;
+import discord4j.discordjson.possible.Possible;
+import discord4j.rest.util.Image;
 import org.bukkit.entity.Player;
+import reactor.core.publisher.Mono;
 
 import javax.imageio.ImageIO;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.Callable;
 import java.util.function.Function;
 
-public class Players {
-    public static List<Byte> getPlayerAvatar(Player player, Size size) throws IOException, NullPointerException {
-        Function<BufferedImage, BufferedImage> asAvatar = skinImage -> {
-            var avatar = new BufferedImage(size.width(), size.height(), BufferedImage.TYPE_INT_ARGB);
-            var avatarGraphics = avatar.createGraphics();
-            avatarGraphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
-            avatarGraphics.drawImage(skinImage.getSubimage(8, 8, 8, 8), 0, 0, size.width(), size.height(), null);
-            avatarGraphics.dispose();
-            return avatar;
+public final class Hooks {
+    private Hooks(){}
+
+    public static Mono<Image> playerAvatar(TextChannel channel, Player player) {
+        Callable<Image> avatarFromSkin = () -> {
+            Function<BufferedImage, BufferedImage> asAvatar = skinImage -> {
+                int size = 512;
+                var avatar = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+                var avatarGraphics = avatar.createGraphics();
+                avatarGraphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+                avatarGraphics.drawImage(skinImage.getSubimage(8, 8, 8, 8), 0, 0, size, size, null);
+                avatarGraphics.dispose();
+                return avatar;
+            };
+            try (var skinIn = player.getPlayerProfile().getTextures().getSkin().openStream()) {
+                var out = new ByteArrayOutputStream();
+                ImageIO.write(asAvatar.apply(ImageIO.read(skinIn)), "png", out);
+                return Image.ofRaw(out.toByteArray(), Image.Format.PNG);
+            }
         };
-        try (var skinIn = player.getPlayerProfile().getTextures().getSkin().openStream()) {
-            var out = new ByteArrayOutputStream();
-            ImageIO.write(asAvatar.apply(ImageIO.read(skinIn)), "png", out);
-            return Bytes.asList(out.toByteArray());
-        }
+        return Mono.fromCallable(avatarFromSkin)
+            .onErrorResume(ignored -> Image.ofUrl("https://files.catbox.moe/72azs6.png"));
     }
 }
