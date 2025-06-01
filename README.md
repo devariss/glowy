@@ -1,5 +1,5 @@
 # glowy
-A Spigot plugin with Discord bot integration using [Discord4J.](https://github.com/Discord4J/Discord4J)
+A [Spigot](https://www.spigotmc.org/) plugin with Discord bot integration using [Discord4J](https://github.com/Discord4J/Discord4J).
 
 # Features
 ### Chatting between Server & Discord
