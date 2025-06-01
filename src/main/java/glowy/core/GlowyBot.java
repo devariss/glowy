@@ -1,4 +1,4 @@
-package glowy;
+package glowy.core;
 
 import com.google.gson.GsonBuilder;
 import discord4j.common.util.Snowflake;

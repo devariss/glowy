@@ -1,105 +1,95 @@
-package glowy;
+package glowy.core;
 
-import discord4j.core.GatewayDiscordClient;
 import discord4j.core.event.domain.message.MessageCreateEvent;
 import discord4j.core.object.entity.Webhook;
 import discord4j.core.object.entity.channel.TextChannel;
-import discord4j.core.spec.UserEditSpec;
 import discord4j.core.spec.WebhookCreateSpec;
+import discord4j.core.spec.WebhookExecuteSpec;
 import discord4j.discordjson.possible.Possible;
 import discord4j.rest.util.Image;
+import glowy.util.minecraft.Players;
+import glowy.util.plugins.ReactivePlugin;
+import org.bukkit.advancement.Advancement;
+import org.bukkit.advancement.AdvancementDisplay;
 import org.bukkit.entity.Player;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerAdvancementDoneEvent;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
+import reactor.function.Function3;
 
 import java.nio.file.Path;
 import java.util.Optional;
 import java.util.function.BiFunction;
+import java.util.function.Function;
+import java.util.function.Predicate;
 
 public final class GlowyPlugin extends ReactivePlugin {
     private final GlowyBot BOT = GlowyBot.fromConfig(Path.of("%s/config.json".formatted(getDataFolder())));
 
     @Override
     public Mono<Void> onInit() {
-        return pluginTasks()
-            .doOnCancel(() -> BOT.client().withGateway(GatewayDiscordClient::logout).block());
+        return pluginTasks();
     }
 
-    private Mono<Void> botStartup() {
-        return Image.ofUrl("https://files.catbox.moe/txmh30.png")
-            .flatMap(avatarUrl -> BOT.client().withGateway(gateway -> gateway.edit(UserEditSpec.builder()
-                .avatar(avatarUrl)
-                .username("Glowy")
-                .build())));
-    }
-
-    //TODO implement.
     private Mono<Void> forwardPlayerAchievements() {
+        Function<AdvancementDisplay, String> formattedContent =
+            display ->
+                """
+                has made the advancement ***[%s]***
+                >>> *%s*
+                """.formatted(display.getTitle(), display.getDescription());
+
+        Predicate<Advancement> isDisplayed =
+            advancement -> Optional.ofNullable(advancement.getDisplay())
+                .filter(AdvancementDisplay::shouldAnnounceChat)
+                .isPresent();
+
         return BOT.client().withGateway(gateway -> gateway.getChannelById(BOT.achievementChannelId())
             .cast(TextChannel.class)
-            .flatMap(channel -> Image.ofUrl("https://files.catbox.moe/5dbkcw.png") // add url to achievement hook pfp
-                .flatMap(avatarUrl -> channel.createWebhook(WebhookCreateSpec.builder()
-                    .name("Achievements")
-                    .avatar(Possible.of(Optional.of(avatarUrl)))
-                    .build())))
-            .flatMap(hook -> on(PlayerAdvancementDoneEvent.class)
-                .doOnCancel(() -> hook.delete().block())
-                .flatMap(event -> Mono.empty())
-                .then()));
+            .flatMap(channel -> on(PlayerAdvancementDoneEvent.class)
+                .filter(event -> isDisplayed.test(event.getAdvancement()))
+                .flatMap(event -> Players.getAvatar(event.getPlayer(), 512, 512)
+                    .flatMap(avatar -> channel.createWebhook(WebhookCreateSpec.builder()
+                        .name(event.getPlayer().getName())
+                        .avatar(Possible.of(Optional.of(avatar)))
+                        .build()))
+                    .flatMap(hook -> hook.execute(WebhookExecuteSpec.builder()
+                        .content(formattedContent.apply(event.getAdvancement().getDisplay()))
+                        .build())
+                        .then(hook.delete())))
+            .then()));
     }
 
-    //TODO create new webhook on new player chatting and deleting old hook
     private Mono<Void> forwardPlayerChat() {
-        Sinks.Many<Webhook> latestHook = Sinks.many().replay().latest();
+        Sinks.Many<Webhook> latestHookSink = Sinks.many().replay().latest();
 
-        BiFunction<TextChannel, Player, Mono<Webhook>> createHook =
-            (channel, player) -> Mono.fromCallable(() -> Image.ofRaw(Players.getPlayerAvatar(player, Images.Size.of(512, 512)), Image.Format.PNG))
-                .onErrorResume(e -> {
-                    getLogger().warning("Failed to get player '%s's avatar with exception:\n%s".formatted(player.getName(), e));
-                    return Image.ofUrl("https://files.catbox.moe/72azs6.png");
-                })
-                .flatMap(avatarImage -> channel.createWebhook(WebhookCreateSpec.builder()
-                    .name(player.getName())
-                    .avatar(Possible.of(Optional.of(avatarImage)))
-                    .build()));
+        Function3<TextChannel, String, Possible<Optional<Image>>, Mono<Webhook>> emitHook =
+            (channel, name, possibleAvatar) -> channel.createWebhook(WebhookCreateSpec.builder()
+                    .name(name)
+                    .avatar(possibleAvatar)
+                    .build())
+                .doOnNext(latestHookSink::tryEmitNext);
 
-        return BOT.client().withGateway(gateway -> gateway.getChannelById(BOT.chatChannelId())
-            .cast(TextChannel.class)
-            .flatMap(channel -> on(AsyncPlayerChatEvent.class)
-                .flatMap(event -> latestHook.asFlux()
-                    .defaultIfEmpty(createHook.apply(channel, event.getPlayer())))
-                .then()));
-        /*
-        BiFunction<Webhook, String, Mono<Webhook>> editHook = (hook, playerName) -> hook.getName()
-            .filter(name -> name.equals(playerName))
-            .map(name -> Mono.just(hook))
-            .orElseGet(() -> Mono.just(WebhookEditSpec.builder().name(playerName))
-                .flatMap(edit -> Mono.fromCallable(() -> edit.avatar(Image.ofRaw(
-                        Players.getPlayerAvatar(Bukkit.getPlayerExact(playerName), Images.Size.of(512, 512)),
-                        Image.Format.PNG
-                    )))
-                    .onErrorResume(e -> {
-                        getLogger().warning("Failed to get avatar from player '%s' with exception:\n%s".formatted(playerName, e));
-                        return Mono.just(edit.avatar(Possible.absent()));
-                    }))
-                    .flatMap(edit -> hook.edit(edit.build())));
+        BiFunction<TextChannel, Player, Mono<Webhook>> filterLatestHook =
+            (channel, player) -> latestHookSink.asFlux()
+                .next()
+                .flatMap(latestHook -> Mono.just(latestHook)
+                    .filter(__ -> latestHook.getName().orElse("").equals(player.getName()))
+                    .switchIfEmpty(latestHook.delete()
+                        .then(Players.getAvatar(player, 512, 512))
+                        .flatMap(avatar -> emitHook.apply(channel, player.getName(), Possible.of(Optional.of(avatar))))));
 
         return BOT.client().withGateway(gateway -> gateway.getChannelById(BOT.chatChannelId())
             .cast(TextChannel.class)
-            .flatMap(channel -> channel.createWebhook(WebhookCreateSpec.builder()
-                .name("Chat Hook")
-                .build()))
-            .flatMap(hook -> on(AsyncPlayerChatEvent.class)
-                .doOnCancel(() -> hook.delete().block())
-                .flatMap(event -> editHook.apply(hook, event.getPlayer().getName())
-                    .flatMap(__ -> hook.execute(WebhookExecuteSpec.builder()
-                        .content("%s".formatted(event.getMessage()))
-                        .build())))
-            .then()));
-
-         */
+            .flatMap(channel -> emitHook.apply(channel, "Glowy Chat Hook", Possible.of(Optional.empty()))
+                .thenMany(on(AsyncPlayerChatEvent.class))
+                .flatMap(event -> filterLatestHook.apply(channel, event.getPlayer())
+                .flatMap(hook -> hook.execute(WebhookExecuteSpec.builder()
+                    .content("%s".formatted(event.getMessage()))
+                    .build())))
+                .then()
+                .doOnCancel(() -> latestHookSink.asFlux().next().block().delete().block())));
     }
 
     private Mono<Void> broadcastChannelChat() {
@@ -111,8 +101,7 @@ public final class GlowyPlugin extends ReactivePlugin {
 
     private Mono<Void> pluginTasks() {
         return Mono.when(
-            botStartup(),
-            // forwardPlayerAchievements(),
+            forwardPlayerAchievements(),
             forwardPlayerChat(),
             broadcastChannelChat()
         );

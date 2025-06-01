@@ -1,9 +1,5 @@
-package glowy.util.hooks;
+package glowy.util.minecraft;
 
-import discord4j.core.object.entity.Webhook;
-import discord4j.core.object.entity.channel.TextChannel;
-import discord4j.core.spec.WebhookCreateSpec;
-import discord4j.discordjson.possible.Possible;
 import discord4j.rest.util.Image;
 import org.bukkit.entity.Player;
 import reactor.core.publisher.Mono;
@@ -12,21 +8,19 @@ import javax.imageio.ImageIO;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
-import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.function.Function;
 
-public final class Hooks {
-    private Hooks(){}
+public final class Players {
+    private Players(){}
 
-    public static Mono<Image> playerAvatar(TextChannel channel, Player player) {
+    public static Mono<Image> getAvatar(Player player, int width, int height) {
         Callable<Image> avatarFromSkin = () -> {
             Function<BufferedImage, BufferedImage> asAvatar = skinImage -> {
-                int size = 512;
-                var avatar = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+                var avatar = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
                 var avatarGraphics = avatar.createGraphics();
                 avatarGraphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
-                avatarGraphics.drawImage(skinImage.getSubimage(8, 8, 8, 8), 0, 0, size, size, null);
+                avatarGraphics.drawImage(skinImage.getSubimage(8, 8, 8, 8), 0, 0, width, height, null);
                 avatarGraphics.dispose();
                 return avatar;
             };
